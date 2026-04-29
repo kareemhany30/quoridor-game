@@ -1,0 +1,1 @@
+"""Quoridor game package."""

@@ -13,6 +13,7 @@ python main.py
 
 - Left click your pawn, then click a highlighted square to move.
 - Click `Move`, `Wall H`, or `Wall V` in the bottom panel to change action mode.
+- Click `Main Menue` to return to the main menu and choose another game mode.
 - In wall mode, click a wall slot on the board to place a wall.
 - Press `M` for move mode.
 - Press `H` for horizontal wall mode.

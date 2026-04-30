@@ -66,7 +66,7 @@ class QuoridorApp:
             self.clock.tick(FPS)
 
     def _build_buttons(self) -> dict[str, pygame.Rect]:
-        button_width = 114
+        button_width = 94
         button_height = 38
         start_x = BOARD_LEFT
         start_y = PANEL_TOP + 88
@@ -76,6 +76,7 @@ class QuoridorApp:
             "wall_h": pygame.Rect(start_x + button_width + spacing, start_y, button_width, button_height),
             "wall_v": pygame.Rect(start_x + 2 * (button_width + spacing), start_y, button_width, button_height),
             "reset": pygame.Rect(start_x + 3 * (button_width + spacing), start_y, button_width, button_height),
+            "menu": pygame.Rect(start_x + 4 * (button_width + spacing), start_y, button_width, button_height),
         }
 
     def _build_setup_buttons(self) -> dict[str, pygame.Rect]:
@@ -122,6 +123,8 @@ class QuoridorApp:
             if rect.collidepoint(mouse_pos):
                 if name == "reset":
                     self._reset_game()
+                elif name == "menu":
+                    self._return_to_menu()
                 elif self._is_computer_turn():
                     return
                 else:
@@ -203,6 +206,16 @@ class QuoridorApp:
         self.computer_difficulty = difficulty
         self.game.reset()
         self.game.players[1].name = self._player_two_name()
+        self.mode = "move"
+        self.selected_pawn = False
+        self.legal_moves = []
+
+    def _return_to_menu(self) -> None:
+        self.show_setup = True
+        self.selected_opponent = None
+        self.play_against_computer = False
+        self.computer_difficulty = None
+        self.game.reset()
         self.mode = "move"
         self.selected_pawn = False
         self.legal_moves = []
@@ -473,6 +486,7 @@ class QuoridorApp:
         self._draw_button("wall_h", "Wall H", self.mode == "wall_h")
         self._draw_button("wall_v", "Wall V", self.mode == "wall_v")
         self._draw_button("reset", "Reset", False)
+        self._draw_button("menu", "Main Menue", False)
 
         hint = self.small_font.render("Keys: M move, H wall, V wall, R reset", True, TEXT_MUTED)
         self.screen.blit(hint, (BOARD_LEFT, PANEL_TOP + 140))

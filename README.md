@@ -13,11 +13,13 @@ python main.py
 
 - Left click your pawn, then click a highlighted square to move.
 - Click `Move`, `Wall H`, or `Wall V` in the bottom panel to change action mode.
-- Click `Main Menue` to return to the main menu and choose another game mode.
+- Click `Undo` or `Redo` to step through move history.
+- Click `Menu` to return to the main menu and choose another game mode.
 - In wall mode, click a wall slot on the board to place a wall.
 - Press `M` for move mode.
 - Press `H` for horizontal wall mode.
 - Press `V` for vertical wall mode.
+- Press `U` to undo, `Y` to redo, `Ctrl+Z` to undo, or `Ctrl+Y` / `Ctrl+Shift+Z` to redo.
 - Press `R` to reset the match.
 
 ## Opponents

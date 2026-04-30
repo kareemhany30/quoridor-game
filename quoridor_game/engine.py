@@ -19,6 +19,24 @@ class PlayerState:
     walls_remaining: int = WALLS_PER_PLAYER
 
 
+@dataclass(frozen=True)
+class PlayerSnapshot:
+    name: str
+    pawn: Position
+    goal_row: int
+    walls_remaining: int
+
+
+@dataclass(frozen=True)
+class GameSnapshot:
+    players: tuple[PlayerSnapshot, ...]
+    current_turn: int
+    horizontal_walls: frozenset[WallPosition]
+    vertical_walls: frozenset[WallPosition]
+    winner: int | None
+    status: str
+
+
 class QuoridorGame:
     def __init__(self) -> None:
         self.reset()
@@ -33,6 +51,40 @@ class QuoridorGame:
         self.vertical_walls: set[WallPosition] = set()
         self.winner: int | None = None
         self.status = "Player 1 to move"
+
+    def snapshot(self) -> GameSnapshot:
+        return GameSnapshot(
+            players=tuple(
+                PlayerSnapshot(
+                    name=player.name,
+                    pawn=player.pawn,
+                    goal_row=player.goal_row,
+                    walls_remaining=player.walls_remaining,
+                )
+                for player in self.players
+            ),
+            current_turn=self.current_turn,
+            horizontal_walls=frozenset(self.horizontal_walls),
+            vertical_walls=frozenset(self.vertical_walls),
+            winner=self.winner,
+            status=self.status,
+        )
+
+    def restore(self, snapshot: GameSnapshot) -> None:
+        self.players = [
+            PlayerState(
+                name=player.name,
+                pawn=player.pawn,
+                goal_row=player.goal_row,
+                walls_remaining=player.walls_remaining,
+            )
+            for player in snapshot.players
+        ]
+        self.current_turn = snapshot.current_turn
+        self.horizontal_walls = set(snapshot.horizontal_walls)
+        self.vertical_walls = set(snapshot.vertical_walls)
+        self.winner = snapshot.winner
+        self.status = snapshot.status
 
     @property
     def current_player(self) -> PlayerState:

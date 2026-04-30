@@ -152,6 +152,31 @@ class QuoridorGame:
                 return index
         return None
 
+    def shortest_path_for_player(self, player_index: int) -> list[Position]:
+        start = self.players[player_index].pawn
+        goal_row = self.players[player_index].goal_row
+        queue: deque[Position] = deque([start])
+        previous: dict[Position, Position | None] = {start: None}
+
+        while queue:
+            current = queue.popleft()
+            if current[0] == goal_row:
+                path: list[Position] = []
+                while current is not None:
+                    path.append(current)
+                    current = previous[current]
+                return list(reversed(path))
+
+            row, col = current
+            for delta_row, delta_col in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nxt = (row + delta_row, col + delta_col)
+                if not self._in_bounds(nxt) or nxt in previous or self._edge_blocked(current, nxt):
+                    continue
+                previous[nxt] = current
+                queue.append(nxt)
+
+        return []
+
     def _all_players_have_paths(self) -> bool:
         return all(self._player_has_path(index) for index in range(len(self.players)))
 

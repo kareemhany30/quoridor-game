@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import random
 import sys
 
 import pygame
 
-from .engine import BOARD_SIZE, QuoridorGame
+from .engine import BOARD_SIZE, Position, QuoridorGame, WallPosition
 
 
 WINDOW_WIDTH = 700
@@ -43,6 +44,10 @@ class QuoridorApp:
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         self.game = QuoridorGame()
+        self.show_setup = True
+        self.play_against_computer = False
+        self.computer_difficulty: str | None = None
+        self.selected_opponent: str | None = None
         self.mode = "move"
         self.selected_pawn = False
         self.legal_moves: list[tuple[int, int]] = []
@@ -50,10 +55,12 @@ class QuoridorApp:
         self.body_font = pygame.font.SysFont("arial", 20, bold=True)
         self.small_font = pygame.font.SysFont("arial", 17)
         self.buttons = self._build_buttons()
+        self.setup_buttons = self._build_setup_buttons()
 
     def run(self) -> None:
         while True:
             self._handle_events()
+            self._maybe_take_computer_turn()
             self._draw()
             pygame.display.flip()
             self.clock.tick(FPS)
@@ -71,6 +78,18 @@ class QuoridorApp:
             "reset": pygame.Rect(start_x + 3 * (button_width + spacing), start_y, button_width, button_height),
         }
 
+    def _build_setup_buttons(self) -> dict[str, pygame.Rect]:
+        button_width = 180
+        button_height = 44
+        center_x = WINDOW_WIDTH // 2
+        return {
+            "human": pygame.Rect(center_x - button_width - 10, 232, button_width, button_height),
+            "computer": pygame.Rect(center_x + 10, 232, button_width, button_height),
+            "easy": pygame.Rect(center_x - 270, 330, 160, button_height),
+            "medium": pygame.Rect(center_x - 80, 330, 160, button_height),
+            "hard": pygame.Rect(center_x + 110, 330, 160, button_height),
+        }
+
     def _handle_events(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -82,6 +101,9 @@ class QuoridorApp:
                 self._handle_click(event.pos)
 
     def _handle_key(self, key: int) -> None:
+        if self.show_setup:
+            return
+
         if key == pygame.K_r:
             self._reset_game()
         elif key == pygame.K_m:
@@ -92,13 +114,22 @@ class QuoridorApp:
             self._set_mode("wall_v")
 
     def _handle_click(self, mouse_pos: tuple[int, int]) -> None:
+        if self.show_setup:
+            self._handle_setup_click(mouse_pos)
+            return
+
         for name, rect in self.buttons.items():
             if rect.collidepoint(mouse_pos):
                 if name == "reset":
                     self._reset_game()
+                elif self._is_computer_turn():
+                    return
                 else:
                     self._set_mode(name)
                 return
+
+        if self._is_computer_turn():
+            return
 
         if self.mode == "move":
             self._handle_move_click(mouse_pos)
@@ -110,6 +141,21 @@ class QuoridorApp:
                 if self.game.place_wall("h" if self.mode == "wall_h" else "v", slot):
                     self.selected_pawn = False
                     self.legal_moves = []
+
+    def _handle_setup_click(self, mouse_pos: tuple[int, int]) -> None:
+        if self.setup_buttons["human"].collidepoint(mouse_pos):
+            self._start_match(play_against_computer=False)
+            return
+
+        if self.setup_buttons["computer"].collidepoint(mouse_pos):
+            self.selected_opponent = "computer"
+            return
+
+        if self.selected_opponent == "computer":
+            for difficulty in ("easy", "medium", "hard"):
+                if self.setup_buttons[difficulty].collidepoint(mouse_pos):
+                    self._start_match(play_against_computer=True, difficulty=difficulty)
+                    return
 
     def _handle_move_click(self, mouse_pos: tuple[int, int]) -> None:
         if self.game.winner is not None:
@@ -146,6 +192,17 @@ class QuoridorApp:
 
     def _reset_game(self) -> None:
         self.game.reset()
+        self.game.players[1].name = self._player_two_name()
+        self.mode = "move"
+        self.selected_pawn = False
+        self.legal_moves = []
+
+    def _start_match(self, play_against_computer: bool, difficulty: str | None = None) -> None:
+        self.show_setup = False
+        self.play_against_computer = play_against_computer
+        self.computer_difficulty = difficulty
+        self.game.reset()
+        self.game.players[1].name = self._player_two_name()
         self.mode = "move"
         self.selected_pawn = False
         self.legal_moves = []
@@ -155,8 +212,142 @@ class QuoridorApp:
         self.selected_pawn = False
         self.legal_moves = []
 
+    def _player_two_name(self) -> str:
+        if not self.play_against_computer or self.computer_difficulty is None:
+            return "Player 2"
+        return f"Computer ({self.computer_difficulty.title()})"
+
+    def _is_computer_turn(self) -> bool:
+        return self.play_against_computer and self.game.current_turn == 1 and self.game.winner is None
+
+    def _maybe_take_computer_turn(self) -> None:
+        if not self._is_computer_turn():
+            return
+
+        pygame.time.delay(220)
+        action = self._choose_computer_action()
+        if action[0] == "move":
+            self.game.move_pawn(action[1])
+        else:
+            orientation, position = action[1], action[2]
+            self.game.place_wall(orientation, position)
+        self.selected_pawn = False
+        self.legal_moves = []
+        self.mode = "move"
+
+    def _choose_computer_action(self) -> tuple[str, Position] | tuple[str, str, WallPosition]:
+        difficulty = self.computer_difficulty or "easy"
+        if difficulty == "easy":
+            return self._choose_easy_action()
+        if difficulty == "medium":
+            return ("move", self._best_path_move(1))
+        return self._choose_hard_action()
+
+    def _choose_easy_action(self) -> tuple[str, Position] | tuple[str, str, WallPosition]:
+        legal_wall = self._random_valid_wall()
+        if legal_wall is not None and random.random() < 0.25:
+            return ("wall", legal_wall[0], legal_wall[1])
+        return ("move", random.choice(self.game.legal_moves_for_current_player()))
+
+    def _choose_hard_action(self) -> tuple[str, Position] | tuple[str, str, WallPosition]:
+        wall = self._best_blocking_wall()
+        computer_path = self.game.shortest_path_for_player(1)
+        human_path = self.game.shortest_path_for_player(0)
+        should_wall = (
+            wall is not None
+            and self.game.current_player.walls_remaining > 0
+            and human_path
+            and computer_path
+            and len(human_path) <= len(computer_path) + 1
+        )
+        if should_wall:
+            return ("wall", wall[0], wall[1])
+        return ("move", self._best_path_move(1))
+
+    def _best_path_move(self, player_index: int) -> Position:
+        path = self.game.shortest_path_for_player(player_index)
+        legal_moves = self.game.legal_moves_for_current_player()
+        if len(path) > 1 and path[1] in legal_moves:
+            return path[1]
+        return random.choice(legal_moves)
+
+    def _random_valid_wall(self) -> tuple[str, WallPosition] | None:
+        if self.game.current_player.walls_remaining <= 0:
+            return None
+
+        candidates = [
+            (orientation, (row, col))
+            for orientation in ("h", "v")
+            for row in range(BOARD_SIZE - 1)
+            for col in range(BOARD_SIZE - 1)
+        ]
+        random.shuffle(candidates)
+        for orientation, position in candidates:
+            is_valid, _ = self.game.wall_is_valid(orientation, position)
+            if is_valid:
+                return (orientation, position)
+        return None
+
+    def _best_blocking_wall(self) -> tuple[str, WallPosition] | None:
+        if self.game.current_player.walls_remaining <= 0:
+            return None
+
+        human_path = self.game.shortest_path_for_player(0)
+        if len(human_path) < 2:
+            return None
+
+        original_human_length = len(human_path)
+        original_computer_length = len(self.game.shortest_path_for_player(1))
+        best_wall: tuple[str, WallPosition] | None = None
+        best_score = -1000
+
+        for start, end in zip(human_path, human_path[1:]):
+            for orientation, position in self._walls_blocking_edge(start, end):
+                is_valid, _ = self.game.wall_is_valid(orientation, position)
+                if not is_valid:
+                    continue
+
+                wall_set = self.game.horizontal_walls if orientation == "h" else self.game.vertical_walls
+                wall_set.add(position)
+                try:
+                    human_length = len(self.game.shortest_path_for_player(0))
+                    computer_length = len(self.game.shortest_path_for_player(1))
+                finally:
+                    wall_set.remove(position)
+
+                score = (human_length - original_human_length) * 3 - (computer_length - original_computer_length)
+                if score > best_score:
+                    best_score = score
+                    best_wall = (orientation, position)
+
+        return best_wall if best_score > 0 else None
+
+    def _walls_blocking_edge(self, start: Position, end: Position) -> list[tuple[str, WallPosition]]:
+        start_row, start_col = start
+        end_row, end_col = end
+        candidates: list[tuple[str, WallPosition]] = []
+
+        if start_row == end_row:
+            row = start_row
+            col = min(start_col, end_col)
+            candidates.extend([("v", (row, col)), ("v", (row - 1, col))])
+        else:
+            row = min(start_row, end_row)
+            col = start_col
+            candidates.extend([("h", (row, col)), ("h", (row, col - 1))])
+
+        return [
+            (orientation, position)
+            for orientation, position in candidates
+            if 0 <= position[0] < BOARD_SIZE - 1 and 0 <= position[1] < BOARD_SIZE - 1
+        ]
+
     def _draw(self) -> None:
         self.screen.fill(BACKGROUND)
+        if self.show_setup:
+            self._draw_setup()
+            return
+
         self._draw_board_frame()
         self._draw_cells()
         self._draw_move_hints()
@@ -164,6 +355,34 @@ class QuoridorApp:
         self._draw_wall_preview()
         self._draw_pawns()
         self._draw_panel()
+
+    def _draw_setup(self) -> None:
+        title = self.title_font.render("Quoridor", True, TEXT_PRIMARY)
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 150))
+        self.screen.blit(title, title_rect)
+
+        prompt = self.body_font.render("Choose your opponent", True, TEXT_PRIMARY)
+        prompt_rect = prompt.get_rect(center=(WINDOW_WIDTH // 2, 196))
+        self.screen.blit(prompt, prompt_rect)
+
+        self._draw_setup_button("human", "Human", self.selected_opponent == "human")
+        self._draw_setup_button("computer", "Computer", self.selected_opponent == "computer")
+
+        if self.selected_opponent == "computer":
+            difficulty_prompt = self.small_font.render("Choose difficulty", True, TEXT_MUTED)
+            difficulty_rect = difficulty_prompt.get_rect(center=(WINDOW_WIDTH // 2, 304))
+            self.screen.blit(difficulty_prompt, difficulty_rect)
+            self._draw_setup_button("easy", "Easy", False)
+            self._draw_setup_button("medium", "Medium", False)
+            self._draw_setup_button("hard", "Hard", False)
+
+    def _draw_setup_button(self, name: str, label: str, active: bool) -> None:
+        rect = self.setup_buttons[name]
+        color = BUTTON_ACTIVE if active else BUTTON_IDLE
+        pygame.draw.rect(self.screen, color, rect, border_radius=10)
+        text = self.body_font.render(label, True, TEXT_PRIMARY)
+        text_rect = text.get_rect(center=rect.center)
+        self.screen.blit(text, text_rect)
 
     def _draw_board_frame(self) -> None:
         frame_rect = pygame.Rect(BOARD_LEFT - 8, BOARD_TOP - 8, BOARD_PIXELS + 16, BOARD_PIXELS + 16)

@@ -1,6 +1,6 @@
 # Quoridor Pygame Project
 
-Local 2-player Quoridor built with Pygame.
+Local Quoridor built with Pygame. Play against another human on the same device or against the computer.
 
 ## Run
 
@@ -19,10 +19,15 @@ python main.py
 - Press `V` for vertical wall mode.
 - Press `R` to reset the match.
 
+## Opponents
+
+- Choose `Human` to play a local 2-player match.
+- Choose `Computer`, then select `Easy`, `Medium`, or `Hard` difficulty.
+
 ## Rules Implemented
 
 - 9x9 board
-- 2 local players on the same device
+- Human-vs-human and human-vs-computer modes
 - 10 walls per player
 - Orthogonal movement
 - Jumping over an adjacent pawn when open

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
 import random
 import sys
+from pathlib import Path
+from typing import Any
 
 import pygame
 
-from .engine import DEFAULT_BOARD_SIZE, GameSnapshot, Position, QuoridorGame, WallPosition
+from .engine import DEFAULT_BOARD_SIZE, DEFAULT_PLAYER_COUNT, GameSnapshot, PlayerSnapshot, Position, QuoridorGame, WallPosition
 
 
 WINDOW_WIDTH = 700
@@ -19,6 +22,7 @@ CELL_SIZE_BY_BOARD_SIZE = {
     9: 46,
     11: 36,
 }
+SAVE_FILE = Path(__file__).resolve().parent.parent / "saved_game.json"
 FPS = 60
 
 BACKGROUND = (24, 31, 38)
@@ -28,6 +32,8 @@ CELL_DARK = (225, 208, 168)
 GRID_GAP = (169, 142, 92)
 PLAYER_ONE = (47, 95, 168)
 PLAYER_TWO = (182, 72, 54)
+PLAYER_THREE = (73, 145, 93)
+PLAYER_FOUR = (177, 126, 49)
 PLAYER_RING = (250, 247, 239)
 MOVE_HINT = (72, 148, 86)
 TEXT_PRIMARY = (245, 246, 248)
@@ -49,12 +55,14 @@ class QuoridorApp:
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         self.selected_board_size = DEFAULT_BOARD_SIZE
-        self.game = QuoridorGame(self.selected_board_size)
+        self.selected_player_count = DEFAULT_PLAYER_COUNT
+        self.game = QuoridorGame(self.selected_board_size, self.selected_player_count)
         self._configure_board_metrics()
         self.show_setup = True
         self.play_against_computer = False
         self.computer_difficulty: str | None = None
         self.selected_opponent: str | None = None
+        self.notice = ""
         self.mode = "move"
         self.selected_pawn = False
         self.legal_moves: list[tuple[int, int]] = []
@@ -81,11 +89,11 @@ class QuoridorApp:
             self.clock.tick(FPS)
 
     def _build_buttons(self) -> dict[str, pygame.Rect]:
-        button_width = 82
+        button_width = 74
         button_height = 38
         start_x = BOARD_LEFT
         start_y = self.panel_top + 88
-        spacing = 8
+        spacing = 6
         return {
             "move": pygame.Rect(start_x, start_y, button_width, button_height),
             "wall_h": pygame.Rect(start_x + button_width + spacing, start_y, button_width, button_height),
@@ -93,7 +101,8 @@ class QuoridorApp:
             "undo": pygame.Rect(start_x + 3 * (button_width + spacing), start_y, button_width, button_height),
             "redo": pygame.Rect(start_x + 4 * (button_width + spacing), start_y, button_width, button_height),
             "reset": pygame.Rect(start_x + 5 * (button_width + spacing), start_y, button_width, button_height),
-            "menu": pygame.Rect(start_x + 6 * (button_width + spacing), start_y, button_width, button_height),
+            "save": pygame.Rect(start_x + 6 * (button_width + spacing), start_y, button_width, button_height),
+            "menu": pygame.Rect(start_x + 7 * (button_width + spacing), start_y, button_width, button_height),
         }
 
     def _build_setup_buttons(self) -> dict[str, pygame.Rect]:
@@ -107,9 +116,12 @@ class QuoridorApp:
             "size_11": pygame.Rect(center_x + 78, 164, size_button_width, button_height),
             "human": pygame.Rect(center_x - button_width - 10, 276, button_width, button_height),
             "computer": pygame.Rect(center_x + 10, 276, button_width, button_height),
+            "players_2": pygame.Rect(center_x - button_width - 10, 388, button_width, button_height),
+            "players_4": pygame.Rect(center_x + 10, 388, button_width, button_height),
             "easy": pygame.Rect(center_x - 270, 388, 160, button_height),
             "medium": pygame.Rect(center_x - 80, 388, 160, button_height),
             "hard": pygame.Rect(center_x + 110, 388, 160, button_height),
+            "load": pygame.Rect(center_x - 125, 488, 250, button_height),
         }
 
     def _handle_events(self) -> None:
@@ -134,6 +146,8 @@ class QuoridorApp:
             self._redo()
         elif ctrl_pressed and key == pygame.K_z:
             self._undo()
+        elif ctrl_pressed and key == pygame.K_s:
+            self._save_game()
         elif ctrl_pressed and key == pygame.K_y:
             self._redo()
         elif key == pygame.K_u:
@@ -164,6 +178,8 @@ class QuoridorApp:
                     self._undo()
                 elif name == "redo":
                     self._redo()
+                elif name == "save":
+                    self._save_game()
                 elif self._is_computer_turn():
                     return
                 else:
@@ -186,23 +202,37 @@ class QuoridorApp:
                     self.legal_moves = []
 
     def _handle_setup_click(self, mouse_pos: tuple[int, int]) -> None:
+        if self.setup_buttons["load"].collidepoint(mouse_pos):
+            self._load_game()
+            return
+
         for board_size in BOARD_SIZE_OPTIONS:
             if self.setup_buttons[f"size_{board_size}"].collidepoint(mouse_pos):
                 self.selected_board_size = board_size
+                self.notice = ""
                 return
 
         if self.setup_buttons["human"].collidepoint(mouse_pos):
-            self._start_match(play_against_computer=False)
+            self.selected_opponent = "human"
             return
 
         if self.setup_buttons["computer"].collidepoint(mouse_pos):
             self.selected_opponent = "computer"
+            self.selected_player_count = 2
             return
+
+        if self.selected_opponent == "human":
+            for player_count in (2, 4):
+                if self.setup_buttons[f"players_{player_count}"].collidepoint(mouse_pos):
+                    self.selected_player_count = player_count
+                    self._start_match(play_against_computer=False, player_count=player_count)
+                    return
 
         if self.selected_opponent == "computer":
             for difficulty in ("easy", "medium", "hard"):
                 if self.setup_buttons[difficulty].collidepoint(mouse_pos):
-                    self._start_match(play_against_computer=True, difficulty=difficulty)
+                    self.selected_player_count = 2
+                    self._start_match(play_against_computer=True, difficulty=difficulty, player_count=2)
                     return
 
     def _handle_move_click(self, mouse_pos: tuple[int, int]) -> None:
@@ -245,19 +275,27 @@ class QuoridorApp:
         self._configure_board_metrics()
         self.buttons = self._build_buttons()
         self._reset_history()
+        self.notice = ""
         self.mode = "move"
         self.selected_pawn = False
         self.legal_moves = []
 
-    def _start_match(self, play_against_computer: bool, difficulty: str | None = None) -> None:
+    def _start_match(
+        self,
+        play_against_computer: bool,
+        difficulty: str | None = None,
+        player_count: int = DEFAULT_PLAYER_COUNT,
+    ) -> None:
         self.show_setup = False
         self.play_against_computer = play_against_computer
         self.computer_difficulty = difficulty
-        self.game = QuoridorGame(self.selected_board_size)
+        self.selected_player_count = 2 if play_against_computer else player_count
+        self.game = QuoridorGame(self.selected_board_size, self.selected_player_count)
         self.game.players[1].name = self._player_two_name()
         self._configure_board_metrics()
         self.buttons = self._build_buttons()
         self._reset_history()
+        self.notice = ""
         self.mode = "move"
         self.selected_pawn = False
         self.legal_moves = []
@@ -267,10 +305,11 @@ class QuoridorApp:
         self.selected_opponent = None
         self.play_against_computer = False
         self.computer_difficulty = None
-        self.game = QuoridorGame(self.selected_board_size)
+        self.game = QuoridorGame(self.selected_board_size, self.selected_player_count)
         self._configure_board_metrics()
         self.buttons = self._build_buttons()
         self._reset_history()
+        self.notice = ""
         self.mode = "move"
         self.selected_pawn = False
         self.legal_moves = []
@@ -288,6 +327,176 @@ class QuoridorApp:
         self.history = self.history[: self.history_index + 1]
         self.history.append(self.game.snapshot())
         self.history_index += 1
+
+    def _save_game(self) -> None:
+        payload = {
+            "version": 1,
+            "play_against_computer": self.play_against_computer,
+            "computer_difficulty": self.computer_difficulty,
+            "player_count": len(self.game.players),
+            "snapshot": self._snapshot_to_data(self.game.snapshot()),
+        }
+        try:
+            SAVE_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except OSError:
+            self.notice = "Could not save game"
+            return
+
+        self.notice = f"Game saved to {SAVE_FILE.name}"
+
+    def _load_game(self) -> None:
+        if not SAVE_FILE.exists():
+            self.notice = "No saved game found"
+            return
+
+        try:
+            data = json.loads(SAVE_FILE.read_text(encoding="utf-8"))
+            snapshot = self._snapshot_from_data(data.get("snapshot"))
+            play_against_computer = bool(data.get("play_against_computer", False))
+            computer_difficulty = data.get("computer_difficulty")
+            if play_against_computer and computer_difficulty not in {"easy", "medium", "hard"}:
+                raise ValueError("Saved computer difficulty is invalid")
+            if play_against_computer and len(snapshot.players) != 2:
+                raise ValueError("Saved computer game must have 2 players")
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            self.notice = "Saved game could not be loaded"
+            return
+
+        self.game = QuoridorGame(snapshot.board_size, len(snapshot.players))
+        self.game.restore(snapshot)
+        self.selected_board_size = snapshot.board_size
+        self.selected_player_count = len(snapshot.players)
+        self.show_setup = False
+        self.play_against_computer = play_against_computer
+        self.computer_difficulty = computer_difficulty if play_against_computer else None
+        self.selected_opponent = "computer" if play_against_computer else "human"
+        self._configure_board_metrics()
+        self.buttons = self._build_buttons()
+        self._reset_history()
+        self.notice = "Loaded saved game"
+        self.mode = "move"
+        self.selected_pawn = False
+        self.legal_moves = []
+
+    def _snapshot_to_data(self, snapshot: GameSnapshot) -> dict[str, Any]:
+        return {
+            "board_size": snapshot.board_size,
+            "players": [
+                {
+                    "name": player.name,
+                    "pawn": list(player.pawn),
+                    "goal_axis": player.goal_axis,
+                    "goal_index": player.goal_index,
+                    "walls_remaining": player.walls_remaining,
+                }
+                for player in snapshot.players
+            ],
+            "current_turn": snapshot.current_turn,
+            "horizontal_walls": [list(wall) for wall in sorted(snapshot.horizontal_walls)],
+            "vertical_walls": [list(wall) for wall in sorted(snapshot.vertical_walls)],
+            "winner": snapshot.winner,
+            "status": snapshot.status,
+        }
+
+    def _snapshot_from_data(self, data: Any) -> GameSnapshot:
+        if not isinstance(data, dict):
+            raise ValueError("Saved snapshot is missing")
+
+        board_size = self._int_from_data(data.get("board_size"), "board size")
+        if board_size not in BOARD_SIZE_OPTIONS:
+            raise ValueError("Saved board size is invalid")
+
+        players_data = data.get("players")
+        if not isinstance(players_data, list) or len(players_data) not in {2, 4}:
+            raise ValueError("Saved players are invalid")
+
+        players = tuple(self._player_snapshot_from_data(player, board_size) for player in players_data)
+        current_turn = self._int_from_data(data.get("current_turn"), "current turn")
+        if not 0 <= current_turn < len(players):
+            raise ValueError("Saved turn is invalid")
+
+        winner_data = data.get("winner")
+        winner = None if winner_data is None else self._int_from_data(winner_data, "winner")
+        if winner is not None and not 0 <= winner < len(players):
+            raise ValueError("Saved winner is invalid")
+
+        status = data.get("status")
+        if not isinstance(status, str):
+            raise ValueError("Saved status is invalid")
+
+        horizontal_walls = frozenset(
+            self._wall_from_data(wall, board_size) for wall in data.get("horizontal_walls", [])
+        )
+        vertical_walls = frozenset(
+            self._wall_from_data(wall, board_size) for wall in data.get("vertical_walls", [])
+        )
+
+        return GameSnapshot(
+            board_size=board_size,
+            players=players,
+            current_turn=current_turn,
+            horizontal_walls=horizontal_walls,
+            vertical_walls=vertical_walls,
+            winner=winner,
+            status=status,
+        )
+
+    def _player_snapshot_from_data(self, data: Any, board_size: int) -> PlayerSnapshot:
+        if not isinstance(data, dict):
+            raise ValueError("Saved player is invalid")
+
+        name = data.get("name")
+        if not isinstance(name, str):
+            raise ValueError("Saved player name is invalid")
+
+        pawn = self._position_from_data(data.get("pawn"), board_size)
+        goal_axis = data.get("goal_axis")
+        goal_index_data = data.get("goal_index")
+        if goal_axis is None and "goal_row" in data:
+            goal_axis = "row"
+            goal_index_data = data.get("goal_row")
+        if goal_axis not in {"row", "col"}:
+            raise ValueError("Saved goal axis is invalid")
+
+        goal_index = self._int_from_data(goal_index_data, "goal index")
+        if not 0 <= goal_index < board_size:
+            raise ValueError("Saved goal index is invalid")
+
+        walls_remaining = self._int_from_data(data.get("walls_remaining"), "walls remaining")
+        if walls_remaining < 0:
+            raise ValueError("Saved wall count is invalid")
+
+        return PlayerSnapshot(
+            name=name,
+            pawn=pawn,
+            goal_axis=goal_axis,
+            goal_index=goal_index,
+            walls_remaining=walls_remaining,
+        )
+
+    def _position_from_data(self, data: Any, board_size: int) -> Position:
+        row, col = self._grid_pair_from_data(data)
+        if not (0 <= row < board_size and 0 <= col < board_size):
+            raise ValueError("Saved position is outside the board")
+        return (row, col)
+
+    def _wall_from_data(self, data: Any, board_size: int) -> WallPosition:
+        row, col = self._grid_pair_from_data(data)
+        if not (0 <= row < board_size - 1 and 0 <= col < board_size - 1):
+            raise ValueError("Saved wall is outside the board")
+        return (row, col)
+
+    def _grid_pair_from_data(self, data: Any) -> tuple[int, int]:
+        if not isinstance(data, list | tuple) or len(data) != 2:
+            raise ValueError("Saved grid pair is invalid")
+        row = self._int_from_data(data[0], "row")
+        col = self._int_from_data(data[1], "column")
+        return (row, col)
+
+    def _int_from_data(self, data: Any, label: str) -> int:
+        if type(data) is not int:
+            raise ValueError(f"Saved {label} is invalid")
+        return data
 
     def _can_undo(self) -> bool:
         return self.history_index > 0
@@ -604,13 +813,25 @@ class QuoridorApp:
         self._draw_setup_button("human", "Human", self.selected_opponent == "human")
         self._draw_setup_button("computer", "Computer", self.selected_opponent == "computer")
 
-        if self.selected_opponent == "computer":
+        if self.selected_opponent == "human":
+            player_prompt = self.small_font.render("Choose players", True, TEXT_MUTED)
+            player_rect = player_prompt.get_rect(center=(WINDOW_WIDTH // 2, 362))
+            self.screen.blit(player_prompt, player_rect)
+            self._draw_setup_button("players_2", "2 Players", False)
+            self._draw_setup_button("players_4", "4 Players", False)
+        elif self.selected_opponent == "computer":
             difficulty_prompt = self.small_font.render("Choose difficulty", True, TEXT_MUTED)
             difficulty_rect = difficulty_prompt.get_rect(center=(WINDOW_WIDTH // 2, 362))
             self.screen.blit(difficulty_prompt, difficulty_rect)
             self._draw_setup_button("easy", "Easy", False)
             self._draw_setup_button("medium", "Medium", False)
             self._draw_setup_button("hard", "Hard", False)
+
+        self._draw_setup_button("load", "Load Saved Game", False)
+        if self.notice:
+            notice = self.small_font.render(self.notice, True, TEXT_MUTED)
+            notice_rect = notice.get_rect(center=(WINDOW_WIDTH // 2, 552))
+            self.screen.blit(notice, notice_rect)
 
     def _draw_setup_button(self, name: str, label: str, active: bool) -> None:
         rect = self.setup_buttons[name]
@@ -664,12 +885,13 @@ class QuoridorApp:
         self.screen.blit(preview, rect.topleft)
 
     def _draw_pawns(self) -> None:
+        player_colors = (PLAYER_ONE, PLAYER_TWO, PLAYER_THREE, PLAYER_FOUR)
         for index, player in enumerate(self.game.players):
             row, col = player.pawn
             rect = self._cell_rect(row, col)
             center = rect.center
             radius = self.cell_size // 2 - 7
-            fill = PLAYER_ONE if index == 0 else PLAYER_TWO
+            fill = player_colors[index]
             pygame.draw.circle(self.screen, fill, center, radius)
             pygame.draw.circle(self.screen, PLAYER_RING, center, radius, width=4)
             label = self.body_font.render(str(index + 1), True, PLAYER_RING)
@@ -688,18 +910,16 @@ class QuoridorApp:
         self.screen.blit(status, (BOARD_LEFT, self.panel_top + 36))
 
         info_x = BOARD_LEFT + 295
-        p1 = self.small_font.render(
-            f"Player 1 walls: {self.game.players[0].walls_remaining}",
-            True,
-            PLAYER_RING,
-        )
-        p2 = self.small_font.render(
-            f"Player 2 walls: {self.game.players[1].walls_remaining}",
-            True,
-            PLAYER_RING,
-        )
-        self.screen.blit(p1, (info_x, self.panel_top + 8))
-        self.screen.blit(p2, (info_x, self.panel_top + 32))
+        info_y = self.panel_top + 8
+        for index, player in enumerate(self.game.players):
+            row_offset = (index % 2) * 24
+            col_offset = (index // 2) * 160
+            wall_text = self.small_font.render(
+                f"P{index + 1} walls: {player.walls_remaining}",
+                True,
+                PLAYER_RING,
+            )
+            self.screen.blit(wall_text, (info_x + col_offset, info_y + row_offset))
 
         turn_text = "Game over" if self.game.winner is not None else f"Turn: {self.game.current_player.name}"
         turn_surface = self.body_font.render(turn_text, True, TEXT_PRIMARY)
@@ -711,10 +931,15 @@ class QuoridorApp:
         self._draw_button("undo", "Undo", False)
         self._draw_button("redo", "Redo", False)
         self._draw_button("reset", "Reset", False)
+        self._draw_button("save", "Save", False)
         self._draw_button("menu", "Menu", False)
 
-        hint = self.small_font.render("Keys: M/H/V modes, U undo, Y redo, R reset", True, TEXT_MUTED)
-        self.screen.blit(hint, (BOARD_LEFT, self.panel_top + 140))
+        if self.notice:
+            notice = self.small_font.render(self.notice, True, TEXT_MUTED)
+            self.screen.blit(notice, (BOARD_LEFT, self.panel_top + 136))
+
+        hint = self.small_font.render("Keys: M/H/V modes, U undo, Y redo, R reset, Ctrl+S save", True, TEXT_MUTED)
+        self.screen.blit(hint, (BOARD_LEFT, self.panel_top + 158))
 
     def _draw_button(self, name: str, label: str, active: bool) -> None:
         rect = self.buttons[name]

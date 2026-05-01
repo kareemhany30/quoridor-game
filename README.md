@@ -12,6 +12,7 @@ python main.py
 ## Controls
 
 - Left click your pawn, then click a highlighted square to move.
+- From the main menu, choose a `7x7`, `9x9`, or `11x11` board before starting.
 - Click `Move`, `Wall H`, or `Wall V` in the bottom panel to change action mode.
 - Click `Undo` or `Redo` to step through move history.
 - Click `Menu` to return to the main menu and choose another game mode.
@@ -29,7 +30,7 @@ python main.py
 
 ## Rules Implemented
 
-- 9x9 board
+- 7x7, 9x9, and 11x11 board options
 - Human-vs-human and human-vs-computer modes
 - 10 walls per player
 - Orthogonal movement

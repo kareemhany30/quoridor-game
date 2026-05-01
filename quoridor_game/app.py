@@ -5,17 +5,20 @@ import sys
 
 import pygame
 
-from .engine import BOARD_SIZE, GameSnapshot, Position, QuoridorGame, WallPosition
+from .engine import DEFAULT_BOARD_SIZE, GameSnapshot, Position, QuoridorGame, WallPosition
 
 
 WINDOW_WIDTH = 700
 WINDOW_HEIGHT = 700
 BOARD_LEFT = 28
 BOARD_TOP = 22
-CELL_SIZE = 46
 GAP_SIZE = 8
-BOARD_PIXELS = BOARD_SIZE * CELL_SIZE + (BOARD_SIZE - 1) * GAP_SIZE
-PANEL_TOP = BOARD_TOP + BOARD_PIXELS + 18
+BOARD_SIZE_OPTIONS = (7, 9, 11)
+CELL_SIZE_BY_BOARD_SIZE = {
+    7: 60,
+    9: 46,
+    11: 36,
+}
 FPS = 60
 
 BACKGROUND = (24, 31, 38)
@@ -45,7 +48,9 @@ class QuoridorApp:
         pygame.display.set_caption("Quoridor")
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
-        self.game = QuoridorGame()
+        self.selected_board_size = DEFAULT_BOARD_SIZE
+        self.game = QuoridorGame(self.selected_board_size)
+        self._configure_board_metrics()
         self.show_setup = True
         self.play_against_computer = False
         self.computer_difficulty: str | None = None
@@ -61,6 +66,12 @@ class QuoridorApp:
         self.buttons = self._build_buttons()
         self.setup_buttons = self._build_setup_buttons()
 
+    def _configure_board_metrics(self) -> None:
+        self.board_size = self.game.board_size
+        self.cell_size = CELL_SIZE_BY_BOARD_SIZE[self.board_size]
+        self.board_pixels = self.board_size * self.cell_size + (self.board_size - 1) * GAP_SIZE
+        self.panel_top = BOARD_TOP + self.board_pixels + 18
+
     def run(self) -> None:
         while True:
             self._handle_events()
@@ -73,7 +84,7 @@ class QuoridorApp:
         button_width = 82
         button_height = 38
         start_x = BOARD_LEFT
-        start_y = PANEL_TOP + 88
+        start_y = self.panel_top + 88
         spacing = 8
         return {
             "move": pygame.Rect(start_x, start_y, button_width, button_height),
@@ -88,13 +99,17 @@ class QuoridorApp:
     def _build_setup_buttons(self) -> dict[str, pygame.Rect]:
         button_width = 180
         button_height = 44
+        size_button_width = 136
         center_x = WINDOW_WIDTH // 2
         return {
-            "human": pygame.Rect(center_x - button_width - 10, 232, button_width, button_height),
-            "computer": pygame.Rect(center_x + 10, 232, button_width, button_height),
-            "easy": pygame.Rect(center_x - 270, 330, 160, button_height),
-            "medium": pygame.Rect(center_x - 80, 330, 160, button_height),
-            "hard": pygame.Rect(center_x + 110, 330, 160, button_height),
+            "size_7": pygame.Rect(center_x - size_button_width - 78, 164, size_button_width, button_height),
+            "size_9": pygame.Rect(center_x - size_button_width // 2, 164, size_button_width, button_height),
+            "size_11": pygame.Rect(center_x + 78, 164, size_button_width, button_height),
+            "human": pygame.Rect(center_x - button_width - 10, 276, button_width, button_height),
+            "computer": pygame.Rect(center_x + 10, 276, button_width, button_height),
+            "easy": pygame.Rect(center_x - 270, 388, 160, button_height),
+            "medium": pygame.Rect(center_x - 80, 388, 160, button_height),
+            "hard": pygame.Rect(center_x + 110, 388, 160, button_height),
         }
 
     def _handle_events(self) -> None:
@@ -171,6 +186,11 @@ class QuoridorApp:
                     self.legal_moves = []
 
     def _handle_setup_click(self, mouse_pos: tuple[int, int]) -> None:
+        for board_size in BOARD_SIZE_OPTIONS:
+            if self.setup_buttons[f"size_{board_size}"].collidepoint(mouse_pos):
+                self.selected_board_size = board_size
+                return
+
         if self.setup_buttons["human"].collidepoint(mouse_pos):
             self._start_match(play_against_computer=False)
             return
@@ -222,6 +242,8 @@ class QuoridorApp:
     def _reset_game(self) -> None:
         self.game.reset()
         self.game.players[1].name = self._player_two_name()
+        self._configure_board_metrics()
+        self.buttons = self._build_buttons()
         self._reset_history()
         self.mode = "move"
         self.selected_pawn = False
@@ -231,8 +253,10 @@ class QuoridorApp:
         self.show_setup = False
         self.play_against_computer = play_against_computer
         self.computer_difficulty = difficulty
-        self.game.reset()
+        self.game = QuoridorGame(self.selected_board_size)
         self.game.players[1].name = self._player_two_name()
+        self._configure_board_metrics()
+        self.buttons = self._build_buttons()
         self._reset_history()
         self.mode = "move"
         self.selected_pawn = False
@@ -243,7 +267,9 @@ class QuoridorApp:
         self.selected_opponent = None
         self.play_against_computer = False
         self.computer_difficulty = None
-        self.game.reset()
+        self.game = QuoridorGame(self.selected_board_size)
+        self._configure_board_metrics()
+        self.buttons = self._build_buttons()
         self._reset_history()
         self.mode = "move"
         self.selected_pawn = False
@@ -427,8 +453,8 @@ class QuoridorApp:
             all_walls = [
                 (orientation, (row, col))
                 for orientation in ("h", "v")
-                for row in range(BOARD_SIZE - 1)
-                for col in range(BOARD_SIZE - 1)
+                for row in range(self.board_size - 1)
+                for col in range(self.board_size - 1)
             ]
             candidates.extend(wall for wall in all_walls if wall not in priority_walls)
         scored: list[tuple[str, WallPosition, float]] = []
@@ -538,7 +564,7 @@ class QuoridorApp:
         return [
             (orientation, position)
             for orientation, position in candidates
-            if 0 <= position[0] < BOARD_SIZE - 1 and 0 <= position[1] < BOARD_SIZE - 1
+            if 0 <= position[0] < self.board_size - 1 and 0 <= position[1] < self.board_size - 1
         ]
 
     def _draw(self) -> None:
@@ -557,19 +583,30 @@ class QuoridorApp:
 
     def _draw_setup(self) -> None:
         title = self.title_font.render("Quoridor", True, TEXT_PRIMARY)
-        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 150))
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 96))
         self.screen.blit(title, title_rect)
 
-        prompt = self.body_font.render("Choose your opponent", True, TEXT_PRIMARY)
-        prompt_rect = prompt.get_rect(center=(WINDOW_WIDTH // 2, 196))
-        self.screen.blit(prompt, prompt_rect)
+        size_prompt = self.body_font.render("Choose board size", True, TEXT_PRIMARY)
+        size_prompt_rect = size_prompt.get_rect(center=(WINDOW_WIDTH // 2, 136))
+        self.screen.blit(size_prompt, size_prompt_rect)
+
+        for board_size in BOARD_SIZE_OPTIONS:
+            self._draw_setup_button(
+                f"size_{board_size}",
+                f"{board_size}x{board_size}",
+                self.selected_board_size == board_size,
+            )
+
+        opponent_prompt = self.body_font.render("Choose your opponent", True, TEXT_PRIMARY)
+        opponent_rect = opponent_prompt.get_rect(center=(WINDOW_WIDTH // 2, 248))
+        self.screen.blit(opponent_prompt, opponent_rect)
 
         self._draw_setup_button("human", "Human", self.selected_opponent == "human")
         self._draw_setup_button("computer", "Computer", self.selected_opponent == "computer")
 
         if self.selected_opponent == "computer":
             difficulty_prompt = self.small_font.render("Choose difficulty", True, TEXT_MUTED)
-            difficulty_rect = difficulty_prompt.get_rect(center=(WINDOW_WIDTH // 2, 304))
+            difficulty_rect = difficulty_prompt.get_rect(center=(WINDOW_WIDTH // 2, 362))
             self.screen.blit(difficulty_prompt, difficulty_rect)
             self._draw_setup_button("easy", "Easy", False)
             self._draw_setup_button("medium", "Medium", False)
@@ -584,12 +621,12 @@ class QuoridorApp:
         self.screen.blit(text, text_rect)
 
     def _draw_board_frame(self) -> None:
-        frame_rect = pygame.Rect(BOARD_LEFT - 8, BOARD_TOP - 8, BOARD_PIXELS + 16, BOARD_PIXELS + 16)
+        frame_rect = pygame.Rect(BOARD_LEFT - 8, BOARD_TOP - 8, self.board_pixels + 16, self.board_pixels + 16)
         pygame.draw.rect(self.screen, BOARD_FRAME, frame_rect, border_radius=14)
 
     def _draw_cells(self) -> None:
-        for row in range(BOARD_SIZE):
-            for col in range(BOARD_SIZE):
+        for row in range(self.board_size):
+            for col in range(self.board_size):
                 rect = self._cell_rect(row, col)
                 pygame.draw.rect(self.screen, GRID_GAP, rect.inflate(GAP_SIZE, GAP_SIZE), border_radius=8)
                 color = CELL_LIGHT if (row + col) % 2 == 0 else CELL_DARK
@@ -631,7 +668,7 @@ class QuoridorApp:
             row, col = player.pawn
             rect = self._cell_rect(row, col)
             center = rect.center
-            radius = CELL_SIZE // 2 - 7
+            radius = self.cell_size // 2 - 7
             fill = PLAYER_ONE if index == 0 else PLAYER_TWO
             pygame.draw.circle(self.screen, fill, center, radius)
             pygame.draw.circle(self.screen, PLAYER_RING, center, radius, width=4)
@@ -645,10 +682,10 @@ class QuoridorApp:
 
     def _draw_panel(self) -> None:
         title = self.title_font.render("Quoridor", True, TEXT_PRIMARY)
-        self.screen.blit(title, (BOARD_LEFT, PANEL_TOP))
+        self.screen.blit(title, (BOARD_LEFT, self.panel_top))
 
         status = self.small_font.render(self.game.status, True, TEXT_PRIMARY)
-        self.screen.blit(status, (BOARD_LEFT, PANEL_TOP + 36))
+        self.screen.blit(status, (BOARD_LEFT, self.panel_top + 36))
 
         info_x = BOARD_LEFT + 295
         p1 = self.small_font.render(
@@ -661,12 +698,12 @@ class QuoridorApp:
             True,
             PLAYER_RING,
         )
-        self.screen.blit(p1, (info_x, PANEL_TOP + 8))
-        self.screen.blit(p2, (info_x, PANEL_TOP + 32))
+        self.screen.blit(p1, (info_x, self.panel_top + 8))
+        self.screen.blit(p2, (info_x, self.panel_top + 32))
 
         turn_text = "Game over" if self.game.winner is not None else f"Turn: {self.game.current_player.name}"
         turn_surface = self.body_font.render(turn_text, True, TEXT_PRIMARY)
-        self.screen.blit(turn_surface, (BOARD_LEFT, PANEL_TOP + 60))
+        self.screen.blit(turn_surface, (BOARD_LEFT, self.panel_top + 60))
 
         self._draw_button("move", "Move", self.mode == "move")
         self._draw_button("wall_h", "Wall H", self.mode == "wall_h")
@@ -677,7 +714,7 @@ class QuoridorApp:
         self._draw_button("menu", "Menu", False)
 
         hint = self.small_font.render("Keys: M/H/V modes, U undo, Y redo, R reset", True, TEXT_MUTED)
-        self.screen.blit(hint, (BOARD_LEFT, PANEL_TOP + 140))
+        self.screen.blit(hint, (BOARD_LEFT, self.panel_top + 140))
 
     def _draw_button(self, name: str, label: str, active: bool) -> None:
         rect = self.buttons[name]
@@ -694,32 +731,32 @@ class QuoridorApp:
         self.screen.blit(text, text_rect)
 
     def _cell_rect(self, row: int, col: int) -> pygame.Rect:
-        x_pos = BOARD_LEFT + col * (CELL_SIZE + GAP_SIZE)
-        y_pos = BOARD_TOP + row * (CELL_SIZE + GAP_SIZE)
-        return pygame.Rect(x_pos, y_pos, CELL_SIZE, CELL_SIZE)
+        x_pos = BOARD_LEFT + col * (self.cell_size + GAP_SIZE)
+        y_pos = BOARD_TOP + row * (self.cell_size + GAP_SIZE)
+        return pygame.Rect(x_pos, y_pos, self.cell_size, self.cell_size)
 
     def _horizontal_wall_rect(self, row: int, col: int) -> pygame.Rect:
         left = self._cell_rect(row, col).left
         top = self._cell_rect(row, col).bottom
-        width = CELL_SIZE * 2 + GAP_SIZE
+        width = self.cell_size * 2 + GAP_SIZE
         return pygame.Rect(left, top, width, GAP_SIZE)
 
     def _vertical_wall_rect(self, row: int, col: int) -> pygame.Rect:
         left = self._cell_rect(row, col).right
         top = self._cell_rect(row, col).top
-        height = CELL_SIZE * 2 + GAP_SIZE
+        height = self.cell_size * 2 + GAP_SIZE
         return pygame.Rect(left, top, GAP_SIZE, height)
 
     def _cell_at(self, mouse_pos: tuple[int, int]) -> tuple[int, int] | None:
-        for row in range(BOARD_SIZE):
-            for col in range(BOARD_SIZE):
+        for row in range(self.board_size):
+            for col in range(self.board_size):
                 if self._cell_rect(row, col).collidepoint(mouse_pos):
                     return (row, col)
         return None
 
     def _wall_slot_at(self, mouse_pos: tuple[int, int], orientation: str) -> tuple[int, int] | None:
-        for row in range(BOARD_SIZE - 1):
-            for col in range(BOARD_SIZE - 1):
+        for row in range(self.board_size - 1):
+            for col in range(self.board_size - 1):
                 rect = self._horizontal_wall_rect(row, col) if orientation == "h" else self._vertical_wall_rect(row, col)
                 if rect.collidepoint(mouse_pos):
                     return (row, col)

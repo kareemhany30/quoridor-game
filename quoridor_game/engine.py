@@ -4,7 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 
 
-BOARD_SIZE = 9
+DEFAULT_BOARD_SIZE = 9
 WALLS_PER_PLAYER = 10
 
 Position = tuple[int, int]
@@ -29,6 +29,7 @@ class PlayerSnapshot:
 
 @dataclass(frozen=True)
 class GameSnapshot:
+    board_size: int
     players: tuple[PlayerSnapshot, ...]
     current_turn: int
     horizontal_walls: frozenset[WallPosition]
@@ -38,13 +39,15 @@ class GameSnapshot:
 
 
 class QuoridorGame:
-    def __init__(self) -> None:
+    def __init__(self, board_size: int = DEFAULT_BOARD_SIZE) -> None:
+        self.board_size = board_size
         self.reset()
 
     def reset(self) -> None:
+        center_col = self.board_size // 2
         self.players = [
-            PlayerState(name="Player 1", pawn=(8, 4), goal_row=0),
-            PlayerState(name="Player 2", pawn=(0, 4), goal_row=8),
+            PlayerState(name="Player 1", pawn=(self.board_size - 1, center_col), goal_row=0),
+            PlayerState(name="Player 2", pawn=(0, center_col), goal_row=self.board_size - 1),
         ]
         self.current_turn = 0
         self.horizontal_walls: set[WallPosition] = set()
@@ -54,6 +57,7 @@ class QuoridorGame:
 
     def snapshot(self) -> GameSnapshot:
         return GameSnapshot(
+            board_size=self.board_size,
             players=tuple(
                 PlayerSnapshot(
                     name=player.name,
@@ -71,6 +75,7 @@ class QuoridorGame:
         )
 
     def restore(self, snapshot: GameSnapshot) -> None:
+        self.board_size = snapshot.board_size
         self.players = [
             PlayerState(
                 name=player.name,
@@ -169,7 +174,7 @@ class QuoridorGame:
         row, col = position
         if orientation not in {"h", "v"}:
             return False, "Unknown wall orientation"
-        if not (0 <= row < BOARD_SIZE - 1 and 0 <= col < BOARD_SIZE - 1):
+        if not (0 <= row < self.board_size - 1 and 0 <= col < self.board_size - 1):
             return False, "Wall is outside the board"
 
         if orientation == "h":
@@ -270,4 +275,4 @@ class QuoridorGame:
 
     def _in_bounds(self, position: Position) -> bool:
         row, col = position
-        return 0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE
+        return 0 <= row < self.board_size and 0 <= col < self.board_size

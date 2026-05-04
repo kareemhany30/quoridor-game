@@ -9,6 +9,17 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Code Structure
+
+- `main.py` starts the app.
+- `quoridor_game/app.py` coordinates the game loop, input, setup, saving, history, and computer turns.
+- `quoridor_game/engine.py` contains the Quoridor rules and game state.
+- `quoridor_game/renderer.py` draws the setup screen, board, pawns, walls, and buttons.
+- `quoridor_game/computer.py` chooses computer moves for each difficulty.
+- `quoridor_game/history.py` manages undo and redo snapshots.
+- `quoridor_game/save_manager.py` reads and writes saved games.
+- `quoridor_game/settings.py` keeps shared constants, layout, and board geometry helpers.
+
 ## Controls
 
 - Left click your pawn, then click a highlighted square to move.

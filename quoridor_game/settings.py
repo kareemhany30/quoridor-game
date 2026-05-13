@@ -4,6 +4,8 @@ import os
 import sys
 from pathlib import Path
 
+import pygame
+
 from .engine import Position, WallPosition
 
 
@@ -62,8 +64,6 @@ class BoardGeometry:
         self.panel_top = BOARD_TOP + self.board_pixels + 18
 
     def cell_rect(self, row: int, col: int) -> pygame.Rect:
-        import pygame
-
         x_pos = BOARD_LEFT + col * (self.cell_size + GAP_SIZE)
         y_pos = BOARD_TOP + row * (self.cell_size + GAP_SIZE)
         return pygame.Rect(x_pos, y_pos, self.cell_size, self.cell_size)
@@ -101,8 +101,6 @@ class BoardGeometry:
 
 
 def build_game_buttons(panel_top: int) -> dict[str, pygame.Rect]:
-    import pygame
-
     button_width = 74
     button_height = 38
     start_x = BOARD_LEFT
@@ -121,8 +119,6 @@ def build_game_buttons(panel_top: int) -> dict[str, pygame.Rect]:
 
 
 def build_setup_buttons() -> dict[str, pygame.Rect]:
-    import pygame
-
     button_width = 180
     button_height = 44
     size_button_width = 136

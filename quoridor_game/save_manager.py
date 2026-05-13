@@ -17,8 +17,12 @@ class LoadedGame:
 
 
 class SaveManager:
-    def __init__(self, save_file: Path) -> None:
+    def __init__(self, save_file: Path, legacy_save_files: tuple[Path, ...] = ()) -> None:
         self.save_file = save_file
+        self.legacy_save_files = legacy_save_files
+
+    def exists(self) -> bool:
+        return self._active_save_file() is not None
 
     def save(
         self,
@@ -33,10 +37,15 @@ class SaveManager:
             "player_count": len(snapshot.players),
             "snapshot": self._snapshot_to_data(snapshot),
         }
+        self.save_file.parent.mkdir(parents=True, exist_ok=True)
         self.save_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def load(self) -> LoadedGame:
-        data = json.loads(self.save_file.read_text(encoding="utf-8"))
+        save_file = self._active_save_file()
+        if save_file is None:
+            raise FileNotFoundError(self.save_file)
+
+        data = json.loads(save_file.read_text(encoding="utf-8"))
         snapshot = self._snapshot_from_data(data.get("snapshot"))
         play_against_computer = bool(data.get("play_against_computer", False))
         computer_difficulty = data.get("computer_difficulty")
@@ -51,6 +60,12 @@ class SaveManager:
             play_against_computer=play_against_computer,
             computer_difficulty=computer_difficulty if play_against_computer else None,
         )
+
+    def _active_save_file(self) -> Path | None:
+        save_files = [save_file for save_file in (self.save_file, *self.legacy_save_files) if save_file.exists()]
+        if not save_files:
+            return None
+        return max(save_files, key=lambda save_file: save_file.stat().st_mtime)
 
     def _snapshot_to_data(self, snapshot: GameSnapshot) -> dict[str, Any]:
         return {

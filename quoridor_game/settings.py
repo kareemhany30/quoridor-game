@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 from .engine import Position, WallPosition
@@ -16,7 +18,14 @@ CELL_SIZE_BY_BOARD_SIZE = {
     9: 46,
     11: 36,
 }
-SAVE_FILE = Path(__file__).resolve().parent.parent / "saved_game.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SAVE_DIR = Path(os.environ.get("APPDATA", Path.home())) / "Quoridor"
+SAVE_FILE = SAVE_DIR / "saved_game.json"
+if getattr(sys, "frozen", False):
+    EXE_DIR = Path(sys.executable).resolve().parent
+    LEGACY_SAVE_FILES = (EXE_DIR / "saved_game.json", EXE_DIR.parent / "saved_game.json")
+else:
+    LEGACY_SAVE_FILES = (PROJECT_ROOT / "saved_game.json", PROJECT_ROOT / "dist" / "saved_game.json")
 FPS = 60
 
 BACKGROUND = (24, 31, 38)

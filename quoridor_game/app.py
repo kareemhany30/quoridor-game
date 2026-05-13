@@ -12,6 +12,7 @@ from .save_manager import SaveManager
 from .settings import (
     BOARD_SIZE_OPTIONS,
     FPS,
+    LEGACY_SAVE_FILES,
     SAVE_FILE,
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
@@ -29,7 +30,7 @@ class QuoridorApp:
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         self.renderer = QuoridorRenderer(self.screen)
-        self.save_manager = SaveManager(SAVE_FILE)
+        self.save_manager = SaveManager(SAVE_FILE, LEGACY_SAVE_FILES)
         self.computer = ComputerPlayer()
 
         self.selected_board_size = DEFAULT_BOARD_SIZE
@@ -280,7 +281,7 @@ class QuoridorApp:
         self.notice = f"Game saved to {SAVE_FILE.name}"
 
     def _load_game(self) -> None:
-        if not SAVE_FILE.exists():
+        if not self.save_manager.exists():
             self.notice = "No saved game found"
             return
 

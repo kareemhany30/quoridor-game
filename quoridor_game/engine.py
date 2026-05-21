@@ -13,6 +13,7 @@ WALLS_BY_PLAYER_COUNT = {
 
 Position = tuple[int, int]
 WallPosition = tuple[int, int]
+MAX_RECENT_PAWN_MOVES = 16
 
 
 @dataclass
@@ -34,6 +35,13 @@ class PlayerSnapshot:
 
 
 @dataclass(frozen=True)
+class PawnMoveSnapshot:
+    player_index: int
+    start: Position
+    end: Position
+
+
+@dataclass(frozen=True)
 class GameSnapshot:
     board_size: int
     players: tuple[PlayerSnapshot, ...]
@@ -42,6 +50,7 @@ class GameSnapshot:
     vertical_walls: frozenset[WallPosition]
     winner: int | None
     status: str
+    recent_pawn_moves: tuple[PawnMoveSnapshot, ...] = ()
 
 
 class QuoridorGame:
@@ -95,6 +104,7 @@ class QuoridorGame:
         self.vertical_walls: set[WallPosition] = set()
         self.winner: int | None = None
         self.status = "Player 1 to move"
+        self.recent_pawn_moves: list[PawnMoveSnapshot] = []
 
     def snapshot(self) -> GameSnapshot:
         return GameSnapshot(
@@ -114,6 +124,7 @@ class QuoridorGame:
             vertical_walls=frozenset(self.vertical_walls),
             winner=self.winner,
             status=self.status,
+            recent_pawn_moves=tuple(self.recent_pawn_moves),
         )
 
     def restore(self, snapshot: GameSnapshot) -> None:
@@ -134,6 +145,7 @@ class QuoridorGame:
         self.vertical_walls = set(snapshot.vertical_walls)
         self.winner = snapshot.winner
         self.status = snapshot.status
+        self.recent_pawn_moves = list(snapshot.recent_pawn_moves[-MAX_RECENT_PAWN_MOVES:])
 
     @property
     def current_player(self) -> PlayerState:
@@ -200,7 +212,10 @@ class QuoridorGame:
             self.status = "Illegal move"
             return False
 
+        player_index = self.current_turn
+        start = self.current_player.pawn
         self.current_player.pawn = destination
+        self._record_pawn_move(player_index, start, destination)
         if self._player_reached_goal(self.current_player):
             self.winner = self.current_turn
             self.status = f"{self.current_player.name} wins!"
@@ -269,6 +284,12 @@ class QuoridorGame:
                 return index
         return None
 
+    def last_pawn_move_for_player(self, player_index: int) -> PawnMoveSnapshot | None:
+        for move in reversed(self.recent_pawn_moves):
+            if move.player_index == player_index:
+                return move
+        return None
+
     def shortest_path_for_player(self, player_index: int) -> list[Position]:
         start = self.players[player_index].pawn
         queue: deque[Position] = deque([start])
@@ -315,6 +336,11 @@ class QuoridorGame:
                 queue.append(nxt)
 
         return False
+
+    def _record_pawn_move(self, player_index: int, start: Position, end: Position) -> None:
+        self.recent_pawn_moves.append(PawnMoveSnapshot(player_index, start, end))
+        if len(self.recent_pawn_moves) > MAX_RECENT_PAWN_MOVES:
+            self.recent_pawn_moves = self.recent_pawn_moves[-MAX_RECENT_PAWN_MOVES:]
 
     def _player_reached_goal(self, player: PlayerState) -> bool:
         return self._position_reaches_goal(player, player.pawn)

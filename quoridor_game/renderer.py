@@ -1,9 +1,26 @@
-from __future__ import annotations
+"""
+Pygame rendering for Quoridor setup and in-game screens.
 
-import pygame
+``QuoridorRenderer`` draws everything the user sees: main menu, checkerboard,
+walls, pawns, legal-move hints, wall placement preview, and the bottom control
+panel. It does not handle input or rules; ``QuoridorApp`` passes game state and
+UI flags into ``draw_setup`` or ``draw_game``.
 
-from .engine import Position, QuoridorGame
-from .settings import (
+Drawing order (in-game)
+-----------------------
+Background → board frame → cells → move hints → placed walls → wall preview
+(hover) → pawns → panel (status, wall counts, buttons, notices).
+
+Fonts use system Arial at three sizes. Colors and layout constants come from
+``quoridor_game.settings``.
+"""
+
+from __future__ import annotations  # Postponed evaluation of annotations
+
+import pygame  # Surfaces, fonts, rects, and drawing primitives
+
+from .engine import Position, QuoridorGame  # Live game state for draw decisions
+from .settings import (  # Palette, layout, and geometry type
     BACKGROUND,
     BOARD_FRAME,
     BOARD_LEFT,
@@ -33,11 +50,20 @@ from .settings import (
 
 
 class QuoridorRenderer:
+    """
+    Stateless drawer bound to a Pygame display surface.
+
+    Create once per window; call ``draw_setup`` or ``draw_game`` each frame.
+    """
+
     def __init__(self, screen: pygame.Surface) -> None:
-        self.screen = screen
-        self.title_font = pygame.font.SysFont("arial", 28, bold=True)
-        self.body_font = pygame.font.SysFont("arial", 20, bold=True)
-        self.small_font = pygame.font.SysFont("arial", 17)
+        """
+        Store the target surface and create title, body, and small fonts.
+        """
+        self.screen = screen  # Main window framebuffer to blit into
+        self.title_font = pygame.font.SysFont("arial", 28, bold=True)  # Headings
+        self.body_font = pygame.font.SysFont("arial", 20, bold=True)  # Buttons and turn line
+        self.small_font = pygame.font.SysFont("arial", 17)  # Hints, status, wall counts
 
     def draw_setup(
         self,
@@ -46,21 +72,28 @@ class QuoridorRenderer:
         selected_opponent: str | None,
         notice: str,
     ) -> None:
-        self.screen.fill(BACKGROUND)
-        title = self.title_font.render("Quoridor", True, TEXT_PRIMARY)
-        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 96))
+        """
+        Render the main menu: title, board size, opponent, follow-up choices, load.
+
+        ``selected_board_size`` highlights the active size tile. When opponent is
+        human, shows 2/4 player buttons; when computer, shows difficulty buttons.
+        ``notice`` is centered near the bottom (save/load messages).
+        """
+        self.screen.fill(BACKGROUND)  # Clear frame to dark background
+        title = self.title_font.render("Quoridor", True, TEXT_PRIMARY)  # Antialiased title text
+        title_rect = title.get_rect(center=(WINDOW_WIDTH // 2, 96))  # Centered near top
         self.screen.blit(title, title_rect)
 
         size_prompt = self.body_font.render("Choose board size", True, TEXT_PRIMARY)
         size_prompt_rect = size_prompt.get_rect(center=(WINDOW_WIDTH // 2, 136))
         self.screen.blit(size_prompt, size_prompt_rect)
 
-        for board_size in BOARD_SIZE_OPTIONS:
+        for board_size in BOARD_SIZE_OPTIONS:  # Draw 7, 9, and 11 size buttons
             self._draw_setup_button(
                 setup_buttons,
                 f"size_{board_size}",
                 f"{board_size}x{board_size}",
-                selected_board_size == board_size,
+                selected_board_size == board_size,  # Highlight current selection
             )
 
         opponent_prompt = self.body_font.render("Choose your opponent", True, TEXT_PRIMARY)
@@ -70,13 +103,13 @@ class QuoridorRenderer:
         self._draw_setup_button(setup_buttons, "human", "Human", selected_opponent == "human")
         self._draw_setup_button(setup_buttons, "computer", "Computer", selected_opponent == "computer")
 
-        if selected_opponent == "human":
+        if selected_opponent == "human":  # Second-step: local player count
             player_prompt = self.small_font.render("Choose players", True, TEXT_MUTED)
             player_rect = player_prompt.get_rect(center=(WINDOW_WIDTH // 2, 362))
             self.screen.blit(player_prompt, player_rect)
             self._draw_setup_button(setup_buttons, "players_2", "2 Players", False)
             self._draw_setup_button(setup_buttons, "players_4", "4 Players", False)
-        elif selected_opponent == "computer":
+        elif selected_opponent == "computer":  # Second-step: AI difficulty
             difficulty_prompt = self.small_font.render("Choose difficulty", True, TEXT_MUTED)
             difficulty_rect = difficulty_prompt.get_rect(center=(WINDOW_WIDTH // 2, 362))
             self.screen.blit(difficulty_prompt, difficulty_rect)
@@ -85,7 +118,7 @@ class QuoridorRenderer:
             self._draw_setup_button(setup_buttons, "hard", "Hard", False)
 
         self._draw_setup_button(setup_buttons, "load", "Load Saved Game", False)
-        if notice:
+        if notice:  # Optional banner from app (load error, success, etc.)
             notice_surface = self.small_font.render(notice, True, TEXT_MUTED)
             notice_rect = notice_surface.get_rect(center=(WINDOW_WIDTH // 2, 552))
             self.screen.blit(notice_surface, notice_rect)
@@ -102,6 +135,12 @@ class QuoridorRenderer:
         can_undo: bool,
         can_redo: bool,
     ) -> None:
+        """
+        Render a full in-game frame: board, pieces, hints, preview, and panel.
+
+        ``mode`` controls wall preview orientation. ``selected_pawn`` and
+        ``legal_moves`` drive green destination dots. Button states reflect undo/redo.
+        """
         self.screen.fill(BACKGROUND)
         self._draw_board_frame(geometry)
         self._draw_cells(geometry)
@@ -118,7 +157,10 @@ class QuoridorRenderer:
         label: str,
         active: bool,
     ) -> None:
-        rect = setup_buttons[name]
+        """
+        Draw one setup menu button with optional selected (active) styling.
+        """
+        rect = setup_buttons[name]  # Precomputed hit/draw rectangle
         color = BUTTON_ACTIVE if active else BUTTON_IDLE
         pygame.draw.rect(self.screen, color, rect, border_radius=10)
         text = self.body_font.render(label, True, TEXT_PRIMARY)
@@ -126,15 +168,21 @@ class QuoridorRenderer:
         self.screen.blit(text, text_rect)
 
     def _draw_board_frame(self, geometry: BoardGeometry) -> None:
+        """
+        Draw a rounded rectangle frame around the entire grid area.
+        """
         frame_rect = pygame.Rect(BOARD_LEFT - 8, BOARD_TOP - 8, geometry.board_pixels + 16, geometry.board_pixels + 16)
         pygame.draw.rect(self.screen, BOARD_FRAME, frame_rect, border_radius=14)
 
     def _draw_cells(self, geometry: BoardGeometry) -> None:
+        """
+        Draw checkerboard cells and gap gutters between them.
+        """
         for row in range(geometry.board_size):
             for col in range(geometry.board_size):
                 rect = geometry.cell_rect(row, col)
-                pygame.draw.rect(self.screen, GRID_GAP, rect.inflate(GAP_SIZE, GAP_SIZE), border_radius=8)
-                color = CELL_LIGHT if (row + col) % 2 == 0 else CELL_DARK
+                pygame.draw.rect(self.screen, GRID_GAP, rect.inflate(GAP_SIZE, GAP_SIZE), border_radius=8)  # Gap under cell
+                color = CELL_LIGHT if (row + col) % 2 == 0 else CELL_DARK  # Checker pattern
                 pygame.draw.rect(self.screen, color, rect, border_radius=7)
 
     def _draw_move_hints(
@@ -143,7 +191,10 @@ class QuoridorRenderer:
         selected_pawn: bool,
         legal_moves: list[Position],
     ) -> None:
-        if not selected_pawn:
+        """
+        Draw green circles on legal destination cells when a pawn is selected.
+        """
+        if not selected_pawn:  # No hints until first click on own pawn
             return
 
         for row, col in legal_moves:
@@ -151,43 +202,55 @@ class QuoridorRenderer:
             pygame.draw.circle(self.screen, MOVE_HINT, center, 8)
 
     def _draw_walls(self, game: QuoridorGame, geometry: BoardGeometry) -> None:
+        """
+        Draw all placed horizontal and vertical wall segments on the board.
+        """
         for row, col in game.horizontal_walls:
             pygame.draw.rect(self.screen, WALL_COLOR, geometry.horizontal_wall_rect(row, col), border_radius=5)
         for row, col in game.vertical_walls:
             pygame.draw.rect(self.screen, WALL_COLOR, geometry.vertical_wall_rect(row, col), border_radius=5)
 
     def _draw_wall_preview(self, game: QuoridorGame, geometry: BoardGeometry, mode: str) -> None:
+        """
+        Draw a semi-transparent wall preview at the mouse slot in wall mode.
+
+        Green if ``wall_is_valid`` passes, red otherwise. Hidden when game over
+        or not in wall_h / wall_v mode.
+        """
         if mode not in {"wall_h", "wall_v"} or game.winner is not None:
             return
 
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos = pygame.mouse.get_pos()  # Current cursor for hover feedback
         orientation = "h" if mode == "wall_h" else "v"
         slot = geometry.wall_slot_at(mouse_pos, orientation)
         if slot is None:
             return
 
-        is_valid, _ = game.wall_is_valid(orientation, slot)
+        is_valid, _ = game.wall_is_valid(orientation, slot)  # Ask engine without placing
         color = VALID_PREVIEW if is_valid else INVALID_PREVIEW
         rect = geometry.horizontal_wall_rect(*slot) if orientation == "h" else geometry.vertical_wall_rect(*slot)
-        preview = pygame.Surface(rect.size, pygame.SRCALPHA)
-        preview.fill((*color, 150))
+        preview = pygame.Surface(rect.size, pygame.SRCALPHA)  # Per-pixel alpha surface
+        preview.fill((*color, 150))  # 150/255 opacity
         self.screen.blit(preview, rect.topleft)
 
     def _draw_pawns(self, game: QuoridorGame, geometry: BoardGeometry) -> None:
+        """
+        Draw each player's pawn as a numbered circle with a turn halo on active player.
+        """
         player_colors = (PLAYER_ONE, PLAYER_TWO, PLAYER_THREE, PLAYER_FOUR)
         for index, player in enumerate(game.players):
             row, col = player.pawn
             rect = geometry.cell_rect(row, col)
             center = rect.center
-            radius = geometry.cell_size // 2 - 7
+            radius = geometry.cell_size // 2 - 7  # Inset so pawn fits inside cell
             fill = player_colors[index]
             pygame.draw.circle(self.screen, fill, center, radius)
-            pygame.draw.circle(self.screen, PLAYER_RING, center, radius, width=4)
-            label = self.body_font.render(str(index + 1), True, PLAYER_RING)
+            pygame.draw.circle(self.screen, PLAYER_RING, center, radius, width=4)  # Outer ring
+            label = self.body_font.render(str(index + 1), True, PLAYER_RING)  # 1-based player number
             label_rect = label.get_rect(center=center)
             self.screen.blit(label, label_rect)
 
-            if index == game.current_turn and game.winner is None:
+            if index == game.current_turn and game.winner is None:  # Highlight whose turn it is
                 halo_radius = radius + 5
                 pygame.draw.circle(self.screen, PLAYER_RING, center, halo_radius, width=2)
 
@@ -201,17 +264,20 @@ class QuoridorRenderer:
         can_undo: bool,
         can_redo: bool,
     ) -> None:
+        """
+        Draw the bottom UI: title, status, wall counts, turn, buttons, hints.
+        """
         title = self.title_font.render("Quoridor", True, TEXT_PRIMARY)
         self.screen.blit(title, (BOARD_LEFT, geometry.panel_top))
 
-        status = self.small_font.render(game.status, True, TEXT_PRIMARY)
+        status = self.small_font.render(game.status, True, TEXT_PRIMARY)  # Engine status message
         self.screen.blit(status, (BOARD_LEFT, geometry.panel_top + 36))
 
-        info_x = BOARD_LEFT + 295
+        info_x = BOARD_LEFT + 295  # Right side: per-player wall counts
         info_y = geometry.panel_top + 8
         for index, player in enumerate(game.players):
-            row_offset = (index % 2) * 24
-            col_offset = (index // 2) * 160
+            row_offset = (index % 2) * 24  # Two rows for up to four players
+            col_offset = (index // 2) * 160  # Two columns of labels
             wall_text = self.small_font.render(
                 f"P{index + 1} walls: {player.walls_remaining}",
                 True,
@@ -232,7 +298,7 @@ class QuoridorRenderer:
         self._draw_game_button(game, buttons, "save", "Save", False, can_undo, can_redo)
         self._draw_game_button(game, buttons, "menu", "Menu", False, can_undo, can_redo)
 
-        if notice:
+        if notice:  # Save/load feedback from app
             notice_surface = self.small_font.render(notice, True, TEXT_MUTED)
             self.screen.blit(notice_surface, (BOARD_LEFT, geometry.panel_top + 136))
 
@@ -249,6 +315,11 @@ class QuoridorRenderer:
         can_undo: bool,
         can_redo: bool,
     ) -> None:
+        """
+        Draw one in-game panel button with active/disabled coloring rules.
+
+        Wall buttons disable when no walls remain; undo/redo use ``can_*`` flags.
+        """
         rect = buttons[name]
         color = BUTTON_ACTIVE if active else BUTTON_IDLE
         if name.startswith("wall") and game.current_player.walls_remaining == 0:

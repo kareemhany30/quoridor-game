@@ -1,27 +1,68 @@
-from __future__ import annotations
+"""
+Persistent save and load for Quoridor matches.
 
-import json
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+``SaveManager`` writes a versioned JSON document containing:
+
+- A full ``GameSnapshot`` (board, players, walls, turn, winner, recent moves).
+- Flags for human vs computer mode and AI difficulty.
+
+Saves go to ``SAVE_FILE`` from ``settings`` (under the user's AppData/home
+Quoridor folder). Older saves may exist at ``LEGACY_SAVE_FILES``; ``exists`` and
+``load`` pick the newest file among primary and legacy paths.
+
+Validation
+----------
+Load paths validate types, board size, player count, indices, and coordinates
+so corrupted files raise ``ValueError`` rather than silently breaking the game.
+Legacy player JSON may use ``goal_row`` instead of ``goal_axis`` / ``goal_index``.
+"""
+
+from __future__ import annotations  # Modern type annotations without forward-ref strings
+
+import json  # Serialize snapshots to UTF-8 JSON on disk
+from dataclasses import dataclass  # LoadedGame result container
+from pathlib import Path  # Save file locations
+from typing import Any  # Untyped JSON dict values during parsing
 
 from .engine import GameSnapshot, PawnMoveSnapshot, PlayerSnapshot, Position, WallPosition
-from .settings import BOARD_SIZE_OPTIONS
+from .settings import BOARD_SIZE_OPTIONS  # Allowed board dimensions for validation
 
 
 @dataclass(frozen=True)
 class LoadedGame:
-    snapshot: GameSnapshot
-    play_against_computer: bool
-    computer_difficulty: str | None
+    """
+    Result of a successful ``SaveManager.load()`` call.
+
+    ``snapshot`` is the board state; the boolean and difficulty describe how
+    ``QuoridorApp`` should configure the AI after restore.
+    """
+
+    snapshot: GameSnapshot  # Immutable full game state
+    play_against_computer: bool  # Whether player 1 is the computer
+    computer_difficulty: str | None  # "easy" | "medium" | "hard", or None for human games
 
 
 class SaveManager:
+    """
+    Read and write Quoridor save files as JSON with schema version 1.
+
+    Construct with primary ``save_file`` and optional ``legacy_save_files`` for
+    migration from older install locations.
+    """
+
     def __init__(self, save_file: Path, legacy_save_files: tuple[Path, ...] = ()) -> None:
-        self.save_file = save_file
-        self.legacy_save_files = legacy_save_files
+        """
+        Store primary and legacy save paths; does not touch disk until save/load.
+        """
+        self.save_file = save_file  # Canonical save location
+        self.legacy_save_files = legacy_save_files  # Older paths checked if primary missing
 
     def exists(self) -> bool:
+        """
+        Return True if any known save file exists on disk.
+
+        Uses the same resolution rules as ``load`` (newest mtime wins).
+        """
         return self._active_save_file() is not None
 
     def save(
@@ -30,23 +71,34 @@ class SaveManager:
         play_against_computer: bool,
         computer_difficulty: str | None,
     ) -> None:
-        payload = {
-            "version": 1,
+        """
+        Write the current match to ``save_file`` as indented JSON.
+
+        Creates parent directories if needed. Raises ``OSError`` on I/O failure.
+        """
+        payload = {  # Top-level document written to disk
+            "version": 1,  # Schema version for future migrations
             "play_against_computer": play_against_computer,
             "computer_difficulty": computer_difficulty,
-            "player_count": len(snapshot.players),
-            "snapshot": self._snapshot_to_data(snapshot),
+            "player_count": len(snapshot.players),  # Redundant but convenient for inspection
+            "snapshot": self._snapshot_to_data(snapshot),  # Nested board state
         }
-        self.save_file.parent.mkdir(parents=True, exist_ok=True)
-        self.save_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.save_file.parent.mkdir(parents=True, exist_ok=True)  # Ensure Quoridor folder exists
+        self.save_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")  # Human-readable JSON
 
     def load(self) -> LoadedGame:
-        save_file = self._active_save_file()
+        """
+        Load and validate the newest available save file.
+
+        Raises ``FileNotFoundError`` if none exist, ``ValueError`` for invalid
+        content, ``OSError`` for read failures.
+        """
+        save_file = self._active_save_file()  # Pick primary or newest legacy file
         if save_file is None:
             raise FileNotFoundError(self.save_file)
 
-        data = json.loads(save_file.read_text(encoding="utf-8"))
-        snapshot = self._snapshot_from_data(data.get("snapshot"))
+        data = json.loads(save_file.read_text(encoding="utf-8"))  # Parse JSON root object
+        snapshot = self._snapshot_from_data(data.get("snapshot"))  # Build frozen GameSnapshot
         play_against_computer = bool(data.get("play_against_computer", False))
         computer_difficulty = data.get("computer_difficulty")
 
@@ -62,12 +114,22 @@ class SaveManager:
         )
 
     def _active_save_file(self) -> Path | None:
+        """
+        Return the path to use for load: newest existing among primary and legacy.
+
+        Returns ``None`` when no save file is found.
+        """
         save_files = [save_file for save_file in (self.save_file, *self.legacy_save_files) if save_file.exists()]
         if not save_files:
             return None
-        return max(save_files, key=lambda save_file: save_file.stat().st_mtime)
+        return max(save_files, key=lambda save_file: save_file.stat().st_mtime)  # Most recently modified
 
     def _snapshot_to_data(self, snapshot: GameSnapshot) -> dict[str, Any]:
+        """
+        Convert a ``GameSnapshot`` to a JSON-serializable dict.
+
+        Positions and walls are stored as ``[row, col]`` lists for readability.
+        """
         return {
             "board_size": snapshot.board_size,
             "players": [
@@ -96,6 +158,11 @@ class SaveManager:
         }
 
     def _snapshot_from_data(self, data: Any) -> GameSnapshot:
+        """
+        Parse a snapshot dict from JSON into a validated ``GameSnapshot``.
+
+        Raises ``ValueError`` with specific messages when fields are missing or invalid.
+        """
         if not isinstance(data, dict):
             raise ValueError("Saved snapshot is missing")
 
@@ -147,6 +214,11 @@ class SaveManager:
         )
 
     def _player_snapshot_from_data(self, data: Any, board_size: int) -> PlayerSnapshot:
+        """
+        Parse one player object from JSON into ``PlayerSnapshot``.
+
+        Supports legacy ``goal_row`` field mapped to row-based goals.
+        """
         if not isinstance(data, dict):
             raise ValueError("Saved player is invalid")
 
@@ -157,7 +229,7 @@ class SaveManager:
         pawn = self._position_from_data(data.get("pawn"), board_size)
         goal_axis = data.get("goal_axis")
         goal_index_data = data.get("goal_index")
-        if goal_axis is None and "goal_row" in data:
+        if goal_axis is None and "goal_row" in data:  # Backward compatibility with older saves
             goal_axis = "row"
             goal_index_data = data.get("goal_row")
         if goal_axis not in {"row", "col"}:
@@ -180,18 +252,27 @@ class SaveManager:
         )
 
     def _position_from_data(self, data: Any, board_size: int) -> Position:
+        """
+        Parse a pawn cell ``[row, col]`` and ensure it lies on the board.
+        """
         row, col = self._grid_pair_from_data(data)
         if not (0 <= row < board_size and 0 <= col < board_size):
             raise ValueError("Saved position is outside the board")
         return (row, col)
 
     def _wall_from_data(self, data: Any, board_size: int) -> WallPosition:
+        """
+        Parse a wall anchor ``[row, col]`` in the (board_size - 1) wall grid.
+        """
         row, col = self._grid_pair_from_data(data)
         if not (0 <= row < board_size - 1 and 0 <= col < board_size - 1):
             raise ValueError("Saved wall is outside the board")
         return (row, col)
 
     def _pawn_move_from_data(self, data: Any, board_size: int, player_count: int) -> PawnMoveSnapshot:
+        """
+        Parse one recent pawn move record for AI repetition heuristics on load.
+        """
         if not isinstance(data, dict):
             raise ValueError("Saved pawn move is invalid")
 
@@ -206,6 +287,9 @@ class SaveManager:
         )
 
     def _grid_pair_from_data(self, data: Any) -> tuple[int, int]:
+        """
+        Parse a two-element list/tuple as ``(row, col)`` integers.
+        """
         if not isinstance(data, list | tuple) or len(data) != 2:
             raise ValueError("Saved grid pair is invalid")
         row = self._int_from_data(data[0], "row")
@@ -213,6 +297,12 @@ class SaveManager:
         return (row, col)
 
     def _int_from_data(self, data: Any, label: str) -> int:
+        """
+        Require a strict JSON int (not bool) for numeric fields.
+
+        JSON booleans are subclasses of int in Python, so ``type(data) is not int``
+        rejects ``true``/``false`` mistaken for numbers.
+        """
         if type(data) is not int:
             raise ValueError(f"Saved {label} is invalid")
         return data

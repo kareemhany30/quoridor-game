@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .engine import GameSnapshot, PawnMoveSnapshot, PlayerSnapshot, Position, WallPosition
+from .engine import GameSnapshot, PlayerSnapshot, Position, WallPosition
 from .settings import BOARD_SIZE_OPTIONS
 
 
@@ -85,14 +85,6 @@ class SaveManager:
             "vertical_walls": [list(wall) for wall in sorted(snapshot.vertical_walls)],
             "winner": snapshot.winner,
             "status": snapshot.status,
-            "recent_pawn_moves": [
-                {
-                    "player_index": move.player_index,
-                    "start": list(move.start),
-                    "end": list(move.end),
-                }
-                for move in snapshot.recent_pawn_moves
-            ],
         }
 
     def _snapshot_from_data(self, data: Any) -> GameSnapshot:
@@ -127,14 +119,6 @@ class SaveManager:
         vertical_walls = frozenset(
             self._wall_from_data(wall, board_size) for wall in data.get("vertical_walls", [])
         )
-        recent_pawn_moves_data = data.get("recent_pawn_moves", [])
-        if not isinstance(recent_pawn_moves_data, list):
-            raise ValueError("Saved pawn move history is invalid")
-        recent_pawn_moves = tuple(
-            self._pawn_move_from_data(move, board_size, len(players))
-            for move in recent_pawn_moves_data
-        )
-
         return GameSnapshot(
             board_size=board_size,
             players=players,
@@ -143,7 +127,6 @@ class SaveManager:
             vertical_walls=vertical_walls,
             winner=winner,
             status=status,
-            recent_pawn_moves=recent_pawn_moves,
         )
 
     def _player_snapshot_from_data(self, data: Any, board_size: int) -> PlayerSnapshot:
@@ -190,20 +173,6 @@ class SaveManager:
         if not (0 <= row < board_size - 1 and 0 <= col < board_size - 1):
             raise ValueError("Saved wall is outside the board")
         return (row, col)
-
-    def _pawn_move_from_data(self, data: Any, board_size: int, player_count: int) -> PawnMoveSnapshot:
-        if not isinstance(data, dict):
-            raise ValueError("Saved pawn move is invalid")
-
-        player_index = self._int_from_data(data.get("player_index"), "pawn move player")
-        if not 0 <= player_index < player_count:
-            raise ValueError("Saved pawn move player is invalid")
-
-        return PawnMoveSnapshot(
-            player_index=player_index,
-            start=self._position_from_data(data.get("start"), board_size),
-            end=self._position_from_data(data.get("end"), board_size),
-        )
 
     def _grid_pair_from_data(self, data: Any) -> tuple[int, int]:
         if not isinstance(data, list | tuple) or len(data) != 2:

@@ -41,6 +41,20 @@ python main.py
 
 - Choose `Human`, then select `2 Players` or `4 Players` for a local match.
 - Choose `Computer`, then select `Easy`, `Medium`, or `Hard` difficulty.
+- `Easy` chooses the best immediate move or wall from the current board position.
+- `Medium` uses minimax depth 1: it checks the computer move, the human reply, then scores the result.
+- `Hard` uses minimax depth 2: it checks the computer move, the human reply, the next computer reply, then scores the result.
+- Computer scoring uses legal pawn movement, including jumps and diagonal moves, so it avoids the old stuck-loop behavior without using repeat-position penalties.
+
+## Build EXE
+
+Build the Windows executable with Python 3.13:
+
+```bash
+py -3.13 -m PyInstaller --noconfirm --clean --onefile --windowed --name Quoridor main.py
+```
+
+The executable is created at `dist/Quoridor.exe`.
 
 ## Rules Implemented
 

@@ -9,6 +9,14 @@ from .settings import ComputerAction
 
 
 class ComputerPlayer:
+    """Choose computer actions for the selected difficulty.
+
+    Easy is greedy one-ply scoring. Medium searches one minimax ply after the
+    computer action. Hard searches two minimax plies after the computer action.
+    All levels evaluate pawn distance with legal moves, including jumps and
+    diagonal moves, instead of using repeat-position penalties.
+    """
+
     def choose_action(self, game: QuoridorGame, difficulty: str | None) -> ComputerAction:
         difficulty = difficulty or "easy"
         if difficulty == "easy":
@@ -18,17 +26,15 @@ class ComputerPlayer:
         return self._choose_hard_action(game)
 
     def _choose_easy_action(self, game: QuoridorGame) -> ComputerAction:
-        wall = self._best_blocking_wall(game)
-        if wall is not None and random.random() < 0.22:
-            return ("wall", wall[0], wall[1])
-        if random.random() < 0.85:
-            return ("move", self._best_path_move(game, 1))
-        return ("move", random.choice(game.legal_moves_for_current_player()))
-
-    def _choose_medium_action(self, game: QuoridorGame) -> ComputerAction:
         return self._best_immediate_action(game, wall_limit=8)
 
+    def _choose_medium_action(self, game: QuoridorGame) -> ComputerAction:
+        return self._best_minimax_action(game, depth=1)
+
     def _choose_hard_action(self, game: QuoridorGame) -> ComputerAction:
+        return self._best_minimax_action(game, depth=2)
+
+    def _best_minimax_action(self, game: QuoridorGame, depth: int) -> ComputerAction:
         actions = self._candidate_actions_for_current_player(game, wall_limit=8, exhaustive_walls=True)
         if not actions:
             return ("move", random.choice(game.legal_moves_for_current_player()))
@@ -41,7 +47,7 @@ class ComputerPlayer:
                 if not self._apply_action(game, action):
                     continue
                 score = (
-                    self._minimax(game, depth=1, alpha=-100000.0, beta=100000.0),
+                    self._minimax(game, depth=depth, alpha=-100000.0, beta=100000.0),
                     self._evaluate_position(game),
                     random.random(),
                 )

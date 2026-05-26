@@ -31,11 +31,11 @@ Screen modes
 
 Human input model
 -----------------
-- **Move mode**: click own pawn to select, then click a highlighted legal
+- Move mode: click own pawn to select, then click a highlighted legal
   destination; clicks outside the board clear selection.
-- **Wall modes** (horizontal / vertical): click a wall slot on the board grid.
-- **Panel buttons**: mode switches, undo, redo, reset, save, return to menu.
-- **Keyboard**: mirrors many panel actions (M/H/V, U/Y, Ctrl+Z, Ctrl+S, R).
+- Wall modes (horizontal / vertical): click a wall slot on the board grid.
+- Panel buttons: mode switches, undo, redo, reset, save, return to menu.
+- Keyboard: mirrors many panel actions (M/H/V, U/Y, Ctrl+Z, Ctrl+S, R).
 
 Computer turns
 --------------
